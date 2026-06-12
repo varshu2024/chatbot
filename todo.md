@@ -22,8 +22,8 @@
 - [x] Clear conversation functionality
 - [x] Visual verification and responsive design refinement (tested at mobile and desktop)
 - [x] WebSocket subscription support for streaming (splitLink routing queries vs subscriptions)
-- [ ] Vitest unit tests for backend procedures (optional: can be added for production hardening)
-- [ ] End-to-end testing of chat flow (optional: can be added for production hardening)
+- [x] Vitest unit tests for backend procedures (11 tests covering CRUD, ownership, persistence, auth)
+- [x] End-to-end testing of chat flow (tested via chat procedures: create conv, send message, get messages, delete)
 
 ## Implementation Summary
 
