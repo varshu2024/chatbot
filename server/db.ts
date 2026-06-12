@@ -1,6 +1,6 @@
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import { InsertUser, users, conversations, messages } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +89,138 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+/**
+ * Get all conversations for a user, ordered by most recent first
+ */
+export async function getUserConversations(userId: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get conversations: database not available");
+    return [];
+  }
+
+  try {
+    const result = await db
+      .select()
+      .from(conversations)
+      .where(eq(conversations.userId, userId))
+      .orderBy(desc(conversations.updatedAt));
+    return result;
+  } catch (error) {
+    console.error("[Database] Failed to get conversations:", error);
+    throw error;
+  }
+}
+
+/**
+ * Create a new conversation for a user
+ */
+export async function createConversation(userId: number, title?: string) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  try {
+    const result = await db.insert(conversations).values({
+      userId,
+      title: title || "New Conversation",
+    });
+    const conversationId = result[0].insertId;
+    return conversationId;
+  } catch (error) {
+    console.error("[Database] Failed to create conversation:", error);
+    throw error;
+  }
+}
+
+/**
+ * Delete a conversation and all its messages
+ */
+export async function deleteConversation(conversationId: number) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  try {
+    await db.delete(messages).where(eq(messages.conversationId, conversationId));
+    await db.delete(conversations).where(eq(conversations.id, conversationId));
+  } catch (error) {
+    console.error("[Database] Failed to delete conversation:", error);
+    throw error;
+  }
+}
+
+/**
+ * Get all messages for a conversation
+ */
+export async function getConversationMessages(conversationId: number) {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[Database] Cannot get messages: database not available");
+    return [];
+  }
+
+  try {
+    const result = await db
+      .select()
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(messages.createdAt);
+    return result;
+  } catch (error) {
+    console.error("[Database] Failed to get messages:", error);
+    throw error;
+  }
+}
+
+/**
+ * Add a message to a conversation
+ */
+export async function addMessage(
+  conversationId: number,
+  role: "user" | "assistant",
+  content: string
+) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  try {
+    const result = await db.insert(messages).values({
+      conversationId,
+      role,
+      content,
+    });
+    const messageId = result[0].insertId;
+    return messageId;
+  } catch (error) {
+    console.error("[Database] Failed to add message:", error);
+    throw error;
+  }
+}
+
+/**
+ * Update conversation title
+ */
+export async function updateConversationTitle(
+  conversationId: number,
+  title: string
+) {
+  const db = await getDb();
+  if (!db) {
+    throw new Error("Database not available");
+  }
+
+  try {
+    await db
+      .update(conversations)
+      .set({ title })
+      .where(eq(conversations.id, conversationId));
+  } catch (error) {
+    console.error("[Database] Failed to update conversation title:", error);
+    throw error;
+  }
+}

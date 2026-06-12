@@ -174,4 +174,40 @@
       max-width: 1280px; /* Standard content width */
     }
   }
+
+  /* Polished animations for chat UI */
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .message-bubble {
+    animation: slideInUp 0.3s ease-out;
+  }
+
+  .typing-indicator {
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .message-bubble,
+    .typing-indicator {
+      animation: none;
+    }
+  }
 }
