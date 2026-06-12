@@ -123,18 +123,51 @@ export const chatRouter = router({
       });
 
       // Get available models
-      const { data: models } = await listLLMModels();
+      let models: any[] = [];
+      try {
+        const modelsResponse = await listLLMModels();
+        models = modelsResponse.data || [];
+        console.log("[Chat] Available models:", models.map((m: any) => m.id).join(", "));
+      } catch (err) {
+        console.error("[Chat] Failed to list models:", err instanceof Error ? err.message : String(err));
+        models = [];
+      }
       const model = models[0]?.id || "gpt-4";
+      console.log("[Chat] Using model:", model);
 
       // Invoke LLM
+      console.log("[Chat] Invoking LLM with", llmMessages.length, "messages");
       const response = await invokeLLM({
         model,
         messages: llmMessages as any,
       });
+      console.log("[Chat] LLM response received:", JSON.stringify(response).substring(0, 200));
+
+      // Defensive check for response structure
+      if (!response || !response.choices || !Array.isArray(response.choices)) {
+        console.error("[Chat] Invalid LLM response structure:", JSON.stringify(response).substring(0, 500));
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "LLM returned invalid response structure",
+        });
+      }
 
       const content = response.choices[0]?.message?.content;
-      const aiResponse =
-        typeof content === "string" ? content : "No response generated";
+      if (!content) {
+        console.error("[Chat] No content in LLM response:", JSON.stringify(response.choices[0]).substring(0, 500));
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "LLM returned empty response",
+        });
+      }
+
+      const aiResponse = typeof content === "string" ? content : "No response generated";
+      if (!aiResponse.trim()) {
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: "LLM returned empty string",
+        });
+      }
 
       // Save the response to database
       await addMessage(input.conversationId, "assistant", aiResponse);
@@ -199,20 +232,44 @@ export const chatRouter = router({
               }));
 
             // Get available models
-            const { data: models } = await listLLMModels();
+            let models: any[] = [];
+            try {
+              const modelsResponse = await listLLMModels();
+              models = modelsResponse.data || [];
+              console.log("[Chat] Available models:", models.map((m: any) => m.id).join(", "));
+            } catch (err) {
+              console.error("[Chat] Failed to list models:", err instanceof Error ? err.message : String(err));
+              models = [];
+            }
             const model = models[0]?.id || "gpt-4";
+            console.log("[Chat] Using model:", model);
 
             // Invoke LLM with streaming
+            console.log("[Chat] Invoking LLM with", llmMessages.length, "messages");
             const response = await invokeLLM({
               model,
               messages: llmMessages as any,
             });
+            console.log("[Chat] LLM response received:", JSON.stringify(response).substring(0, 200));
 
             if (aborted) return;
 
+            // Defensive check for response structure
+            if (!response || !response.choices || !Array.isArray(response.choices)) {
+              console.error("[Chat] Invalid LLM response structure:", JSON.stringify(response).substring(0, 500));
+              throw new Error("LLM returned invalid response structure");
+            }
+
             const content = response.choices[0]?.message?.content;
-            const aiResponse =
-              typeof content === "string" ? content : "No response generated";
+            if (!content) {
+              console.error("[Chat] No content in LLM response:", JSON.stringify(response.choices[0]).substring(0, 500));
+              throw new Error("LLM returned empty response");
+            }
+
+            const aiResponse = typeof content === "string" ? content : "No response generated";
+            if (!aiResponse.trim()) {
+              throw new Error("LLM returned empty string");
+            }
 
             // Stream the response word by word
             const words = aiResponse.split(" ");
@@ -239,11 +296,15 @@ export const chatRouter = router({
             }
           } catch (error) {
             if (!aborted) {
-              console.error("[Chat] Failed to stream response:", error);
+              const errorMsg = error instanceof Error ? error.message : String(error);
+              console.error("[Chat] Failed to stream response:", errorMsg);
+              if (error instanceof Error) {
+                console.error("[Chat] Error stack:", error.stack);
+              }
               emit.error(
                 new TRPCError({
                   code: "INTERNAL_SERVER_ERROR",
-                  message: "Failed to generate AI response",
+                  message: "Failed to generate AI response: " + errorMsg,
                 })
               );
             }
