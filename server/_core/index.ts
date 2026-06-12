@@ -3,9 +3,11 @@ import express from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { applyWSSHandler } from "@trpc/server/adapters/ws";
+import { WebSocketServer } from "ws";
 import { registerOAuthRoutes } from "./oauth";
-import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
+import { registerStorageProxy } from "./storageProxy";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -44,6 +46,22 @@ async function startServer() {
       createContext,
     })
   );
+
+  // WebSocket server for tRPC subscriptions
+  const wss = new WebSocketServer({ server, path: "/api/trpc" });
+  applyWSSHandler({
+    wss,
+    router: appRouter,
+    createContext: (opts: any) => {
+      // For WebSocket, we need to extract auth from the initial HTTP upgrade request
+      return createContext({
+        req: opts.req,
+        res: opts.res,
+        info: opts.info,
+      } as any);
+    },
+  });
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);

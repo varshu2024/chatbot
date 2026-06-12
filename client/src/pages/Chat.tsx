@@ -38,6 +38,7 @@ export default function Chat() {
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [conversationToDelete, setConversationToDelete] = useState<number | null>(null);
   const [streamingContent, setStreamingContent] = useState("");
+  const streamingContentRef = useRef("");
   const [sidebarOpen, setSidebarOpen] = useState(!isMobile);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -56,25 +57,30 @@ export default function Chat() {
     streamInput || skipToken,
     {
       onData: (data) => {
-        setStreamingContent((prev) => prev + data.token);
+        streamingContentRef.current += data.token;
+        setStreamingContent(streamingContentRef.current);
       },
       onError: (error) => {
         console.error("Streaming error:", error);
+        streamingContentRef.current = "";
+        setStreamingContent("");
         setIsStreaming(false);
         setStreamInput(null);
       },
       onComplete: () => {
         // Add the complete streamed message to messages
-        if (streamingContent.trim()) {
+        const finalContent = streamingContentRef.current.trim();
+        if (finalContent) {
           setMessages((prev) => [
             ...prev,
             {
               id: Date.now(),
               role: "assistant",
-              content: streamingContent.trim(),
+              content: finalContent,
             },
           ]);
         }
+        streamingContentRef.current = "";
         setStreamingContent("");
         setIsStreaming(false);
         setStreamInput(null);

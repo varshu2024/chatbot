@@ -63,7 +63,9 @@ export const chatRouter = router({
     .query(async ({ ctx, input }) => {
       // Verify ownership
       const conversations = await getUserConversations(ctx.user.id);
-      const conversation = conversations.find((c) => c.id === input.conversationId);
+      const conversation = conversations.find(
+        (c) => c.id === input.conversationId
+      );
       if (!conversation) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -75,9 +77,7 @@ export const chatRouter = router({
     }),
 
   /**
-   * Send a message and get a streaming AI response
-   * This procedure returns the full response text (not streaming to client)
-   * For true streaming, the client should use a separate endpoint
+   * Send a message and get a non-streaming response
    */
   sendMessage: protectedProcedure
     .input(
@@ -89,7 +89,9 @@ export const chatRouter = router({
     .mutation(async ({ ctx, input }) => {
       // Verify ownership
       const conversations = await getUserConversations(ctx.user.id);
-      const conversation = conversations.find((c) => c.id === input.conversationId);
+      const conversation = conversations.find(
+        (c) => c.id === input.conversationId
+      );
       if (!conversation) {
         throw new TRPCError({
           code: "NOT_FOUND",
@@ -103,11 +105,16 @@ export const chatRouter = router({
       // Get conversation history for context
       const messages = await getConversationMessages(input.conversationId);
 
-      // Build message history for LLM
-      const llmMessages: Array<{ role: "user" | "assistant"; content: string }> = messages.map((msg) => ({
-        role: msg.role as "user" | "assistant",
-        content: msg.content as string,
-      }));
+      // Build message history for LLM (don't include the message we just added)
+      const llmMessages: Array<{
+        role: "user" | "assistant";
+        content: string;
+      }> = messages
+        .filter((msg) => msg.role !== "user" || msg.content !== input.message)
+        .map((msg) => ({
+          role: msg.role as "user" | "assistant",
+          content: msg.content as string,
+        }));
 
       // Add the new user message
       llmMessages.push({
@@ -115,45 +122,34 @@ export const chatRouter = router({
         content: input.message as string,
       });
 
-      try {
-        // Get available models
-        const { data: models } = await listLLMModels();
-        const model = models[0]?.id || "gpt-4";
+      // Get available models
+      const { data: models } = await listLLMModels();
+      const model = models[0]?.id || "gpt-4";
 
-        // Invoke LLM
-        const response = await invokeLLM({
-          model,
-          messages: llmMessages as any,
-        });
+      // Invoke LLM
+      const response = await invokeLLM({
+        model,
+        messages: llmMessages as any,
+      });
 
-        const content = response.choices[0]?.message?.content;
-        const aiResponse =
-          typeof content === "string" ? content : "No response generated";
+      const content = response.choices[0]?.message?.content;
+      const aiResponse =
+        typeof content === "string" ? content : "No response generated";
 
-        // Save AI response to database
-        await addMessage(input.conversationId, "assistant", aiResponse);
+      // Save the response to database
+      await addMessage(input.conversationId, "assistant", aiResponse);
 
-        // Update conversation title if it's the first message
-        if (messages.length === 0) {
-          const title = input.message.substring(0, 50);
-          await updateConversationTitle(input.conversationId, title);
-        }
-
-        return {
-          response: aiResponse,
-        };
-      } catch (error) {
-        console.error("[Chat] Failed to get AI response:", error);
-        throw new TRPCError({
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Failed to generate AI response",
-        });
+      // Update conversation title if it's the first message
+      if (messages.length === 0) {
+        const title = input.message.substring(0, 50);
+        await updateConversationTitle(input.conversationId, title);
       }
+
+      return { response: aiResponse };
     }),
 
   /**
-   * Stream a chat response word-by-word
-   * Uses server-sent events (SSE) to stream the response as it's generated
+   * Stream a message response in real-time
    */
   streamMessage: protectedProcedure
     .input(
@@ -164,7 +160,9 @@ export const chatRouter = router({
     )
     .subscription(({ ctx, input }) => {
       return observable<{ token: string }>((emit: any) => {
-        (async () => {
+        let aborted = false;
+
+        const task = (async () => {
           try {
             // Verify ownership
             const conversations = await getUserConversations(ctx.user.id);
@@ -172,12 +170,14 @@ export const chatRouter = router({
               (c) => c.id === input.conversationId
             );
             if (!conversation) {
-              emit.error(
-                new TRPCError({
-                  code: "NOT_FOUND",
-                  message: "Conversation not found",
-                })
-              );
+              if (!aborted) {
+                emit.error(
+                  new TRPCError({
+                    code: "NOT_FOUND",
+                    message: "Conversation not found",
+                  })
+                );
+              }
               return;
             }
 
@@ -187,20 +187,16 @@ export const chatRouter = router({
             // Get conversation history for context
             const messages = await getConversationMessages(input.conversationId);
 
-            // Build message history for LLM
+            // Build message history for LLM (don't duplicate the latest user message)
             const llmMessages: Array<{
               role: "user" | "assistant";
               content: string;
-            }> = messages.map((msg) => ({
-              role: msg.role as "user" | "assistant",
-              content: msg.content as string,
-            }));
-
-            // Add the new user message
-            llmMessages.push({
-              role: "user" as const,
-              content: input.message as string,
-            });
+            }> = messages
+              .filter((msg) => msg.role !== "user" || msg.content !== input.message)
+              .map((msg) => ({
+                role: msg.role as "user" | "assistant",
+                content: msg.content as string,
+              }));
 
             // Get available models
             const { data: models } = await listLLMModels();
@@ -212,6 +208,8 @@ export const chatRouter = router({
               messages: llmMessages as any,
             });
 
+            if (aborted) return;
+
             const content = response.choices[0]?.message?.content;
             const aiResponse =
               typeof content === "string" ? content : "No response generated";
@@ -219,10 +217,13 @@ export const chatRouter = router({
             // Stream the response word by word
             const words = aiResponse.split(" ");
             for (const word of words) {
+              if (aborted) return;
               emit.next({ token: word + " " });
               // Small delay between words for better streaming effect
               await new Promise((resolve) => setTimeout(resolve, 20));
             }
+
+            if (aborted) return;
 
             // Save the full response to database
             await addMessage(input.conversationId, "assistant", aiResponse);
@@ -233,17 +234,26 @@ export const chatRouter = router({
               await updateConversationTitle(input.conversationId, title);
             }
 
-            emit.complete();
+            if (!aborted) {
+              emit.complete();
+            }
           } catch (error) {
-            console.error("[Chat] Failed to stream response:", error);
-            emit.error(
-              new TRPCError({
-                code: "INTERNAL_SERVER_ERROR",
-                message: "Failed to generate AI response",
-              })
-            );
+            if (!aborted) {
+              console.error("[Chat] Failed to stream response:", error);
+              emit.error(
+                new TRPCError({
+                  code: "INTERNAL_SERVER_ERROR",
+                  message: "Failed to generate AI response",
+                })
+              );
+            }
           }
         })();
+
+        // Return cleanup function
+        return () => {
+          aborted = true;
+        };
       });
     }),
 });
