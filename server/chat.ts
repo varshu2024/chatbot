@@ -105,22 +105,19 @@ export const chatRouter = router({
       // Get conversation history for context
       const messages = await getConversationMessages(input.conversationId);
 
-      // Build message history for LLM (don't include the message we just added)
+      // Build message history for LLM
+      // Note: messages array includes the user message we just added
       const llmMessages: Array<{
         role: "user" | "assistant";
         content: string;
       }> = messages
-        .filter((msg) => msg.role !== "user" || msg.content !== input.message)
         .map((msg) => ({
           role: msg.role as "user" | "assistant",
           content: msg.content as string,
         }));
-
-      // Add the new user message
-      llmMessages.push({
-        role: "user" as const,
-        content: input.message as string,
-      });
+      
+      console.log("[Chat] Message history:", llmMessages.map(m => `${m.role}: ${m.content.substring(0, 50)}...`).join(" | "));
+      // Note: llmMessages already includes the user message we just added
 
       // Get available models
       let models: any[] = [];
@@ -220,16 +217,18 @@ export const chatRouter = router({
             // Get conversation history for context
             const messages = await getConversationMessages(input.conversationId);
 
-            // Build message history for LLM (don't duplicate the latest user message)
+            // Build message history for LLM
+            // Note: messages array includes the user message we just added
             const llmMessages: Array<{
               role: "user" | "assistant";
               content: string;
             }> = messages
-              .filter((msg) => msg.role !== "user" || msg.content !== input.message)
               .map((msg) => ({
                 role: msg.role as "user" | "assistant",
                 content: msg.content as string,
               }));
+            
+            console.log("[Chat] Message history:", llmMessages.map(m => `${m.role}: ${m.content.substring(0, 50)}...`).join(" | "));
 
             // Get available models
             let models: any[] = [];

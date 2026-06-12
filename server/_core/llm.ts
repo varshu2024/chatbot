@@ -401,6 +401,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
+  console.log("[LLM] Sending payload:", JSON.stringify(payload).substring(0, 500));
   const response = await fetchWithBackoff(resolveApiUrl(), {
     method: "POST",
     headers: {
@@ -409,6 +410,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     },
     body: JSON.stringify(payload),
   });
+  console.log("[LLM] Response status:", response.status);
 
   if (!response.ok) {
     const errorText = await response.text();
