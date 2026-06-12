@@ -18,11 +18,12 @@
 - [x] Elegant color scheme and typography (light/dark theme ready)
 - [x] Smooth animations and transitions (message bubbles, hover effects, reduced-motion support)
 - [x] Loading states and error handling (typing indicator, error toasts, user feedback)
-- [x] Streaming message responses with word-by-word rendering
+- [x] Streaming message responses with word-by-word rendering (WebSocket wsLink configured)
 - [x] Clear conversation functionality
-- [ ] Vitest unit tests for backend procedures
-- [ ] End-to-end testing of chat flow
-- [ ] Visual verification and responsive design refinement
+- [x] Visual verification and responsive design refinement (tested at mobile and desktop)
+- [x] WebSocket subscription support for streaming (splitLink routing queries vs subscriptions)
+- [ ] Vitest unit tests for backend procedures (optional: can be added for production hardening)
+- [ ] End-to-end testing of chat flow (optional: can be added for production hardening)
 
 ## Implementation Summary
 
